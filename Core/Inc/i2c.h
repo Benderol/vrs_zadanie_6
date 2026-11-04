@@ -43,7 +43,6 @@ uint8_t I2C1_ReadByte(uint8_t address, uint8_t reg, uint8_t *data);
 uint8_t I2C1_ReadBytes(uint8_t address, uint8_t reg, uint8_t *data, uint8_t length);
 uint8_t I2C1_WriteByte(uint8_t address, uint8_t reg, uint8_t data);
 uint8_t I2C1_WriteBytes(uint8_t address, uint8_t reg, uint8_t *data, uint8_t length);
-uint8_t I2C1_IsDeviceReady(uint8_t address);
 /* USER CODE END Prototypes */
 
 #ifdef __cplusplus

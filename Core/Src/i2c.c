@@ -284,30 +284,5 @@ uint8_t I2C1_WriteByte(uint8_t address, uint8_t reg, uint8_t data)
   return I2C1_WriteBytes(address, reg, &data, 1);
 }
 
-uint8_t I2C1_IsDeviceReady(uint8_t address)
-{
-  I2C1_WaitBusFree();
-
-  LL_I2C_HandleTransfer(I2C1, address << 1, LL_I2C_ADDRSLAVE_7BIT, 0,
-                        LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
-
-  uint32_t timeout = I2C1_TIMEOUT;
-
-  while(!LL_I2C_IsActiveFlag_STOP(I2C1))
-  {
-    if(--timeout == 0)
-    {
-      I2C1_Recover();
-      return 0;
-    }
-  }
-
-  uint8_t acknowledged = (LL_I2C_IsActiveFlag_NACK(I2C1) == 0);
-
-  LL_I2C_ClearFlag_NACK(I2C1);
-  LL_I2C_ClearFlag_STOP(I2C1);
-
-  return acknowledged;
-}
 /* USER CODE END 1 */
 

@@ -137,23 +137,6 @@ int main(void)
       humidityReady = HTS221_Init();
     }
 
-    if(!pressureReady || !humidityReady)
-    {
-      char scan[96];
-      int length = sprintf(scan, "SCAN:");
-
-      for(uint8_t address = 0x08; address < 0x78; address++)
-      {
-        if(I2C1_IsDeviceReady(address))
-        {
-          length += sprintf(scan + length, " %02X", address);
-        }
-      }
-
-      sprintf(scan + length, "\r\n");
-      USART2_SendString(scan);
-    }
-
     float temperature = 0.0f;
     float humidity = 0.0f;
     float pressure = 0.0f;
