@@ -21,7 +21,7 @@
 #include "i2c.h"
 
 /* USER CODE BEGIN 0 */
-
+#define I2C1_TIMEOUT 100000U
 /* USER CODE END 0 */
 
 /* I2C1 init function */
@@ -82,46 +82,203 @@ void MX_I2C1_Init(void)
 }
 
 /* USER CODE BEGIN 1 */
-uint8_t I2C1_ReadByte(uint8_t address, uint8_t reg)
+static uint8_t I2C1_WaitFlagTxis(void)
 {
-  LL_I2C_HandleTransfer(I2C1, address << 1, LL_I2C_ADDRSLAVE_7BIT, 1, LL_I2C_MODE_SOFTEND, LL_I2C_GENERATE_START_WRITE);
+  uint32_t timeout = I2C1_TIMEOUT;
 
-  while(!LL_I2C_IsActiveFlag_TXIS(I2C1));
-  LL_I2C_TransmitData8(I2C1, reg);
+  while(!LL_I2C_IsActiveFlag_TXIS(I2C1))
+  {
+    if(LL_I2C_IsActiveFlag_NACK(I2C1))
+    {
+      return 0;
+    }
 
-  while(!LL_I2C_IsActiveFlag_TC(I2C1));
+    if(--timeout == 0)
+    {
+      return 0;
+    }
+  }
 
-  LL_I2C_HandleTransfer(I2C1, address << 1, LL_I2C_ADDRSLAVE_7BIT, 1, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_READ);
-
-  while(!LL_I2C_IsActiveFlag_RXNE(I2C1));
-  uint8_t value = LL_I2C_ReceiveData8(I2C1);
-
-  while(!LL_I2C_IsActiveFlag_STOP(I2C1));
-  LL_I2C_ClearFlag_STOP(I2C1);
-
-  return value;
+  return 1;
 }
 
-void I2C1_ReadBytes(uint8_t address, uint8_t reg, uint8_t *data, uint8_t length)
+static uint8_t I2C1_WaitFlagRxne(void)
 {
+  uint32_t timeout = I2C1_TIMEOUT;
+
+  while(!LL_I2C_IsActiveFlag_RXNE(I2C1))
+  {
+    if(LL_I2C_IsActiveFlag_NACK(I2C1))
+    {
+      return 0;
+    }
+
+    if(--timeout == 0)
+    {
+      return 0;
+    }
+  }
+
+  return 1;
+}
+
+static uint8_t I2C1_WaitFlagTc(void)
+{
+  uint32_t timeout = I2C1_TIMEOUT;
+
+  while(!LL_I2C_IsActiveFlag_TC(I2C1))
+  {
+    if(LL_I2C_IsActiveFlag_NACK(I2C1))
+    {
+      return 0;
+    }
+
+    if(--timeout == 0)
+    {
+      return 0;
+    }
+  }
+
+  return 1;
+}
+
+static uint8_t I2C1_WaitFlagStop(void)
+{
+  uint32_t timeout = I2C1_TIMEOUT;
+
+  while(!LL_I2C_IsActiveFlag_STOP(I2C1))
+  {
+    if(--timeout == 0)
+    {
+      return 0;
+    }
+  }
+
+  LL_I2C_ClearFlag_STOP(I2C1);
+
+  return 1;
+}
+
+static uint8_t I2C1_Abort(void)
+{
+  LL_I2C_GenerateStopCondition(I2C1);
+  LL_I2C_ClearFlag_NACK(I2C1);
+  LL_I2C_ClearFlag_STOP(I2C1);
+
+  return 0;
+}
+
+uint8_t I2C1_ReadBytes(uint8_t address, uint8_t reg, uint8_t *data, uint8_t length)
+{
+  if((data == 0) || (length == 0))
+  {
+    return 0;
+  }
+
+  LL_I2C_HandleTransfer(I2C1, address << 1, LL_I2C_ADDRSLAVE_7BIT, 1,
+                        LL_I2C_MODE_SOFTEND, LL_I2C_GENERATE_START_WRITE);
+
+  if(!I2C1_WaitFlagTxis())
+  {
+    return I2C1_Abort();
+  }
+
+  LL_I2C_TransmitData8(I2C1, reg);
+
+  if(!I2C1_WaitFlagTc())
+  {
+    return I2C1_Abort();
+  }
+
+  LL_I2C_HandleTransfer(I2C1, address << 1, LL_I2C_ADDRSLAVE_7BIT, length,
+                        LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_READ);
+
   for(uint8_t i = 0; i < length; i++)
   {
-    data[i] = I2C1_ReadByte(address, reg + i);
+    if(!I2C1_WaitFlagRxne())
+    {
+      return I2C1_Abort();
+    }
+
+    data[i] = LL_I2C_ReceiveData8(I2C1);
   }
+
+  if(!I2C1_WaitFlagStop())
+  {
+    return I2C1_Abort();
+  }
+
+  return 1;
 }
 
-void I2C1_WriteByte(uint8_t address, uint8_t reg, uint8_t value)
+uint8_t I2C1_ReadByte(uint8_t address, uint8_t reg, uint8_t *data)
 {
-  LL_I2C_HandleTransfer(I2C1, address << 1, LL_I2C_ADDRSLAVE_7BIT, 2, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
+  return I2C1_ReadBytes(address, reg, data, 1);
+}
 
-  while(!LL_I2C_IsActiveFlag_TXIS(I2C1));
+uint8_t I2C1_WriteBytes(uint8_t address, uint8_t reg, uint8_t *data, uint8_t length)
+{
+  if((data == 0) || (length == 0) || (length > 254))
+  {
+    return 0;
+  }
+
+  LL_I2C_HandleTransfer(I2C1, address << 1, LL_I2C_ADDRSLAVE_7BIT, length + 1,
+                        LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
+
+  if(!I2C1_WaitFlagTxis())
+  {
+    return I2C1_Abort();
+  }
+
   LL_I2C_TransmitData8(I2C1, reg);
 
-  while(!LL_I2C_IsActiveFlag_TXIS(I2C1));
-  LL_I2C_TransmitData8(I2C1, value);
+  for(uint8_t i = 0; i < length; i++)
+  {
+    if(!I2C1_WaitFlagTxis())
+    {
+      return I2C1_Abort();
+    }
 
-  while(!LL_I2C_IsActiveFlag_STOP(I2C1));
+    LL_I2C_TransmitData8(I2C1, data[i]);
+  }
+
+  if(!I2C1_WaitFlagStop())
+  {
+    return I2C1_Abort();
+  }
+
+  return 1;
+}
+
+uint8_t I2C1_WriteByte(uint8_t address, uint8_t reg, uint8_t data)
+{
+  return I2C1_WriteBytes(address, reg, &data, 1);
+}
+
+uint8_t I2C1_IsDeviceReady(uint8_t address)
+{
+  LL_I2C_HandleTransfer(I2C1, address << 1, LL_I2C_ADDRSLAVE_7BIT, 0,
+                        LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
+
+  uint32_t timeout = I2C1_TIMEOUT;
+
+  while(!LL_I2C_IsActiveFlag_STOP(I2C1))
+  {
+    if(--timeout == 0)
+    {
+      LL_I2C_ClearFlag_NACK(I2C1);
+      LL_I2C_ClearFlag_STOP(I2C1);
+      return 0;
+    }
+  }
+
+  uint8_t acknowledged = (LL_I2C_IsActiveFlag_NACK(I2C1) == 0);
+
+  LL_I2C_ClearFlag_NACK(I2C1);
   LL_I2C_ClearFlag_STOP(I2C1);
+
+  return acknowledged;
 }
 /* USER CODE END 1 */
 

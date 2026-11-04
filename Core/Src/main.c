@@ -25,6 +25,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <stdlib.h>
+#include "lps22hb.h"
+#include "hts221.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -34,9 +37,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define LPS25HB_ADDRESS   0x5D
-#define HTS221_ADDRESS    0x5F
-#define WHO_AM_I_REG      0x0F
+#define SAMPLE_PERIOD_MS  200
+#define MESSAGE_SIZE      64
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -58,7 +60,10 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+static int ScaleFloat(float value, int factor)
+{
+  return (int)((value * (float)factor) + ((value >= 0.0f) ? 0.5f : -0.5f));
+}
 /* USER CODE END 0 */
 
 /**
@@ -97,7 +102,17 @@ int main(void)
   MX_I2C1_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
+  LPS22HB_RegisterBus(I2C1_ReadByte, I2C1_ReadBytes, I2C1_WriteByte, I2C1_WriteBytes);
+  HTS221_RegisterBus(I2C1_ReadByte, I2C1_ReadBytes, I2C1_WriteByte, I2C1_WriteBytes);
 
+  uint8_t pressureReady = LPS22HB_Init();
+  uint8_t humidityReady = HTS221_Init();
+
+  if(pressureReady)
+  {
+    LL_mDelay(50);
+    LPS22HB_SetGroundReference();
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -107,14 +122,73 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    uint8_t lpsId = I2C1_ReadByte(LPS25HB_ADDRESS, WHO_AM_I_REG);
-    uint8_t htsId = I2C1_ReadByte(HTS221_ADDRESS, WHO_AM_I_REG);
+    if(!pressureReady)
+    {
+      pressureReady = LPS22HB_Init();
 
-    char message[48];
-    sprintf(message, "LPS25HB: 0x%02X, HTS221: 0x%02X\r\n", lpsId, htsId);
+      if(pressureReady)
+      {
+        LPS22HB_SetGroundReference();
+      }
+    }
+
+    if(!humidityReady)
+    {
+      humidityReady = HTS221_Init();
+    }
+
+    if(!pressureReady || !humidityReady)
+    {
+      char scan[96];
+      int length = sprintf(scan, "SCAN:");
+
+      for(uint8_t address = 0x08; address < 0x78; address++)
+      {
+        if(I2C1_IsDeviceReady(address))
+        {
+          length += sprintf(scan + length, " %02X", address);
+        }
+      }
+
+      sprintf(scan + length, "\r\n");
+      USART2_SendString(scan);
+    }
+
+    float temperature = 0.0f;
+    float humidity = 0.0f;
+    float pressure = 0.0f;
+    float altitude = 0.0f;
+
+    if(pressureReady)
+    {
+      pressureReady = LPS22HB_ReadPressure(&pressure);
+      altitude = LPS22HB_CalculateAltitude(pressure);
+    }
+
+    if(humidityReady)
+    {
+      humidityReady = HTS221_ReadTemperature(&temperature);
+      HTS221_ReadHumidity(&humidity);
+    }
+
+    int temperatureScaled = ScaleFloat(temperature, 10);
+    int humidityScaled = ScaleFloat(humidity, 1);
+    int pressureScaled = ScaleFloat(pressure, 100);
+    int altitudeScaled = ScaleFloat(altitude, 100);
+
+    char message[MESSAGE_SIZE];
+
+    sprintf(message, "%s%d.%d,%d,%d.%02d,%s%d.%02d\r\n",
+            (temperatureScaled < 0) ? "-" : "",
+            abs(temperatureScaled) / 10, abs(temperatureScaled) % 10,
+            humidityScaled,
+            pressureScaled / 100, pressureScaled % 100,
+            (altitudeScaled < 0) ? "-" : "",
+            abs(altitudeScaled) / 100, abs(altitudeScaled) % 100);
+
     USART2_SendString(message);
 
-    LL_mDelay(500);
+    LL_mDelay(SAMPLE_PERIOD_MS);
   }
   /* USER CODE END 3 */
 }
