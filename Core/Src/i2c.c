@@ -82,6 +82,46 @@ void MX_I2C1_Init(void)
 }
 
 /* USER CODE BEGIN 1 */
+uint8_t I2C1_ReadByte(uint8_t address, uint8_t reg)
+{
+  LL_I2C_HandleTransfer(I2C1, address << 1, LL_I2C_ADDRSLAVE_7BIT, 1, LL_I2C_MODE_SOFTEND, LL_I2C_GENERATE_START_WRITE);
 
+  while(!LL_I2C_IsActiveFlag_TXIS(I2C1));
+  LL_I2C_TransmitData8(I2C1, reg);
+
+  while(!LL_I2C_IsActiveFlag_TC(I2C1));
+
+  LL_I2C_HandleTransfer(I2C1, address << 1, LL_I2C_ADDRSLAVE_7BIT, 1, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_READ);
+
+  while(!LL_I2C_IsActiveFlag_RXNE(I2C1));
+  uint8_t value = LL_I2C_ReceiveData8(I2C1);
+
+  while(!LL_I2C_IsActiveFlag_STOP(I2C1));
+  LL_I2C_ClearFlag_STOP(I2C1);
+
+  return value;
+}
+
+void I2C1_ReadBytes(uint8_t address, uint8_t reg, uint8_t *data, uint8_t length)
+{
+  for(uint8_t i = 0; i < length; i++)
+  {
+    data[i] = I2C1_ReadByte(address, reg + i);
+  }
+}
+
+void I2C1_WriteByte(uint8_t address, uint8_t reg, uint8_t value)
+{
+  LL_I2C_HandleTransfer(I2C1, address << 1, LL_I2C_ADDRSLAVE_7BIT, 2, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
+
+  while(!LL_I2C_IsActiveFlag_TXIS(I2C1));
+  LL_I2C_TransmitData8(I2C1, reg);
+
+  while(!LL_I2C_IsActiveFlag_TXIS(I2C1));
+  LL_I2C_TransmitData8(I2C1, value);
+
+  while(!LL_I2C_IsActiveFlag_STOP(I2C1));
+  LL_I2C_ClearFlag_STOP(I2C1);
+}
 /* USER CODE END 1 */
 

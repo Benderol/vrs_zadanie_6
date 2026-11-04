@@ -24,7 +24,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -34,7 +34,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define LPS25HB_ADDRESS   0x5D
+#define HTS221_ADDRESS    0x5F
+#define WHO_AM_I_REG      0x0F
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -105,6 +107,14 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    uint8_t lpsId = I2C1_ReadByte(LPS25HB_ADDRESS, WHO_AM_I_REG);
+    uint8_t htsId = I2C1_ReadByte(HTS221_ADDRESS, WHO_AM_I_REG);
+
+    char message[48];
+    sprintf(message, "LPS25HB: 0x%02X, HTS221: 0x%02X\r\n", lpsId, htsId);
+    USART2_SendString(message);
+
+    LL_mDelay(500);
   }
   /* USER CODE END 3 */
 }
