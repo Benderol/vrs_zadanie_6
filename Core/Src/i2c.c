@@ -21,7 +21,7 @@
 #include "i2c.h"
 
 /* USER CODE BEGIN 0 */
-#define I2C1_TIMEOUT 100000U
+#define I2C1_TIMEOUT 20000U
 /* USER CODE END 0 */
 
 /* I2C1 init function */
@@ -159,13 +159,37 @@ static uint8_t I2C1_WaitFlagStop(void)
   return 1;
 }
 
-static uint8_t I2C1_Abort(void)
+static void I2C1_Recover(void)
 {
-  LL_I2C_GenerateStopCondition(I2C1);
   LL_I2C_ClearFlag_NACK(I2C1);
+  LL_I2C_ClearFlag_BERR(I2C1);
+  LL_I2C_ClearFlag_ARLO(I2C1);
+  LL_I2C_ClearFlag_OVR(I2C1);
   LL_I2C_ClearFlag_STOP(I2C1);
 
+  LL_I2C_Disable(I2C1);
+  LL_I2C_Enable(I2C1);
+}
+
+static uint8_t I2C1_Abort(void)
+{
+  I2C1_Recover();
+
   return 0;
+}
+
+static void I2C1_WaitBusFree(void)
+{
+  uint32_t timeout = I2C1_TIMEOUT;
+
+  while(LL_I2C_IsActiveFlag_BUSY(I2C1))
+  {
+    if(--timeout == 0)
+    {
+      I2C1_Recover();
+      return;
+    }
+  }
 }
 
 uint8_t I2C1_ReadBytes(uint8_t address, uint8_t reg, uint8_t *data, uint8_t length)
@@ -174,6 +198,8 @@ uint8_t I2C1_ReadBytes(uint8_t address, uint8_t reg, uint8_t *data, uint8_t leng
   {
     return 0;
   }
+
+  I2C1_WaitBusFree();
 
   LL_I2C_HandleTransfer(I2C1, address << 1, LL_I2C_ADDRSLAVE_7BIT, 1,
                         LL_I2C_MODE_SOFTEND, LL_I2C_GENERATE_START_WRITE);
@@ -223,6 +249,8 @@ uint8_t I2C1_WriteBytes(uint8_t address, uint8_t reg, uint8_t *data, uint8_t len
     return 0;
   }
 
+  I2C1_WaitBusFree();
+
   LL_I2C_HandleTransfer(I2C1, address << 1, LL_I2C_ADDRSLAVE_7BIT, length + 1,
                         LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
 
@@ -258,6 +286,8 @@ uint8_t I2C1_WriteByte(uint8_t address, uint8_t reg, uint8_t data)
 
 uint8_t I2C1_IsDeviceReady(uint8_t address)
 {
+  I2C1_WaitBusFree();
+
   LL_I2C_HandleTransfer(I2C1, address << 1, LL_I2C_ADDRSLAVE_7BIT, 0,
                         LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
 
@@ -267,8 +297,7 @@ uint8_t I2C1_IsDeviceReady(uint8_t address)
   {
     if(--timeout == 0)
     {
-      LL_I2C_ClearFlag_NACK(I2C1);
-      LL_I2C_ClearFlag_STOP(I2C1);
+      I2C1_Recover();
       return 0;
     }
   }
